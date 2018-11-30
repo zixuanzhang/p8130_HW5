@@ -4,7 +4,7 @@ author: "Eleanor Zhang"
 date: "11/30/2018"
 output: html_document
 editor_options: 
-  chunk_output_type: console
+  chunk_output_type: inline
 ---
 
 ```{r setup, include=FALSE}
@@ -12,5 +12,166 @@ knitr::opts_chunk$set(echo = TRUE)
 library("tidyverse")
 library("caret", "boot", "MPV")
 ```
+
+
+## Read Data
+
+R dataset ‘state.x77’ from library(faraway) contains information on 50 states from 1970s collected by US Census Bureau. The goal is to predict ‘life expectancy’ using a combination of remaining variables.
+
+Here our main outcome is life expectancy. The rest variables constitute the pool of variables that may be used for regression model.
+
+```{r}
+library(faraway)
+data(state)
+state <- as.tibble(state.x77) %>% 
+  janitor::clean_names() # clean variable names
+```
+
+## Explore the data
+
+#### data description
+```{r}
+str(state) # 50 rows, 8 variables
+names(state)
+```
+
+Data description (from R document):  
+
+*  population: population estimate as of July 1, 1975
+*  income: per capita income (1974)
+*  illiteracy: illiteracy (1970, percent of population)
+*  life_exp: life expectancy in years (1969–71)
+*  murder: murder and non-negligent manslaughter rate per 100,000 population (1976)
+*  hs_grad: percent high-school graduates (1970)
+*  frost: mean number of days with minimum temperature below freezing (1931–1960) in capital or large city
+*  area: land area in square miles
+
+#### Problem 1 Explore the data and summary
+
+Number summary
+
+```{r}
+summary(state) 
+anyNA(state) # NO missing value
+```
+
+Plot visualize distributin
+
+```{r}
+par(mfrow = c(2,4))
+map(state, hist)
+```
+
+Observe:  
+
+*  skewed: population size, illteracy, area (reported by median and IQR): maybe categorize them?
+*  the other distribution looks evenly shaped (reported by mean and sd)
+
+relationship between covariates
+
+```{r}
+state %>% select(life_exp, everything()) %>% pairs()
+cor(state) %>% knitr::kable()
+```
+
+Observe:
+
+*  murder and illiteracy seems to have exponential relation
+*  Area may need to be categorized
+*  life expectancy are negatively associated with murder rate and illiteracy repectively linearly. There is some positive linear relation between life expectancy and high school graduates percentage and frost days.
+*  Some potential colinearity: hs_grad and income, hs_grad and illiteracy, 
+
+#### Problem 2 Automatic procedure
+
+```{r fit with all predictors}
+multi.fit <- lm(life_exp ~ ., data = state)
+summary(multi.fit)
+```
+
+Comment: murder and is the most significant predictor. hs_grad is significant at 0.05 level. The other predictors are not very significant when including all other variables in the model. The adjusted R-square is penalized such that it is significantly smaller than the unadjusted one. This implies we have included unnecessary predictors in the model.
+
+Method I: Backward elimination
+
+Start from there, we use backward elimination to find the "best" subset:
+
+By looking at the summary of full model regression, backward elimination starts eliminating the one with largest p value, so we __remove area__ first
+
+```{r remove area}
+step1 <- update(multi.fit, . ~ . -area)
+summary(step1)
+```
+
+Then we __remove illiteracy__
+
+```{r remove illiteracy}
+step2 <- update(step1, . ~ . -illiteracy)
+summary(step2)
+```
+
+Then Then we __remove income__
+
+```{r}
+step3 <- update(step2, . ~ . -income)
+summary(step3)
+```
+
+Then we __remove population__
+
+```{r remove population}
+step4 <- update(step3, . ~ . -population)
+summary(step4)
+```
+
+Result: backward selection model is 
+
+__life expectancy = 71.04 - 0.283Murder + 0.05hs_grad - 0.007frost__
+
+Method II: Forward elimination
+
+We begin with regression with ech single predictor and obtain their summaries
+
+```{r}
+fit_pop <- lm(life_exp ~ population, data = state)
+result <- tibble(model = map(state[-4], ~lm(life_exp ~ .x, data = state))) %>% 
+  mutate(result = map(model, broom::tidy)) %>% 
+  select(-model) %>% 
+  unnest() %>% 
+  filter(term == ".x") %>% 
+  select(-statistic) %>% 
+  mutate(term = c("population", "income", "illiteracy", "murder", "hs_grad", "frost", "area"),
+         estimate = round(estimate, digits = 6),
+         std.error = round(std.error, digits = 6))
+result
+```
+
+Enter variable with smallest p value: murder
+
+```{r}
+library(broom)
+forward1 <- lm(life_exp ~ murder, data = state)
+```
+
+Enter variable with the smallest p value among the rest: 
+
+```{r}
+fit1 <- update(forward1, . ~ . +population)
+fit2 <- update(forward1, . ~ . +income)
+fit3 <- update(forward1, . ~ . +illiteracy)
+fit4 <- update(forward1, . ~ . +hs_grad)
+fit5 <- update(forward1, . ~ . +frost)
+fit6 <- update(forward1, . ~ . +area)
+
+tibble(model = map(list(fit1, fit2, fit3, fit4, fit5, fit6), summary)) %>% 
+  mutate(result = map(model, tidy)) %>% 
+  select(-model) %>% 
+  unnest(result)
+
+```
+
+Enter variable: hs_grad
+
+
+Enter variable: income
+
 
 
