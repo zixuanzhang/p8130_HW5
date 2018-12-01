@@ -90,7 +90,7 @@ summary(multi.fit)
 
 Comment: murder and is the most significant predictor. hs_grad is significant at 0.05 level. The other predictors are not very significant when including all other variables in the model. The adjusted R-square is penalized such that it is significantly smaller than the unadjusted one. This implies we have included unnecessary predictors in the model.
 
-Method I: Backward elimination
+1) __Method I: Backward elimination (choose alpha_to_remove > 0.2)__
 
 Start from there, we use backward elimination to find the "best" subset:
 
@@ -115,18 +115,14 @@ step3 <- update(step2, . ~ . -income)
 summary(step3)
 ```
 
-Then we __remove population__
-
-```{r remove population}
-step4 <- update(step3, . ~ . -population)
-summary(step4)
-```
+At the beginning, we set alpha to remove is 0.2. There is no further reduction of variable at the stage. 
 
 Result: backward selection model is 
 
-__life expectancy = 71.04 - 0.283Murder + 0.05hs_grad - 0.007frost__
+__life expectancy = 71 + 0.00005population - 0.3Murder + 0.047hs_grad - 0.006frost__
 
-Method II: Forward elimination
+
+2) __Method II: Forward elimination (choose alpha to enter < 0.2)__
 
 We begin with regression with ech single predictor and obtain their summaries
 
@@ -141,7 +137,7 @@ result <- tibble(model = map(state[-4], ~lm(life_exp ~ .x, data = state))) %>%
   mutate(term = c("population", "income", "illiteracy", "murder", "hs_grad", "frost", "area"),
          estimate = round(estimate, digits = 6),
          std.error = round(std.error, digits = 6))
-result
+result %>% arrange(p.value) # rank by p value
 ```
 
 Enter variable with smallest p value: murder
@@ -161,17 +157,164 @@ fit4 <- update(forward1, . ~ . +hs_grad)
 fit5 <- update(forward1, . ~ . +frost)
 fit6 <- update(forward1, . ~ . +area)
 
-tibble(model = map(list(fit1, fit2, fit3, fit4, fit5, fit6), summary)) %>% 
+result2 <- tibble(model = map(list(fit1, fit2, fit3, fit4, fit5, fit6), summary)) %>% 
   mutate(result = map(model, tidy)) %>% 
   select(-model) %>% 
   unnest(result)
 
+result2 %>% 
+  filter(!term %in% c("(Intercept)", "murder")) %>% 
+  mutate(rank_p_value = rank(p.value)) %>% 
+  right_join(., result2)
 ```
 
 Enter variable: hs_grad
 
+```{r}
+forward2 <- lm(life_exp ~ murder + hs_grad, data = state)
+tidy(forward2)
+```
 
-Enter variable: income
+Enter variable with the smallest p value among the rest: 
+
+```{r}
+fit1 <- update(forward2, . ~ . +population)
+fit2 <- update(forward2, . ~ . +income)
+fit3 <- update(forward2, . ~ . +illiteracy)
+fit4 <- update(forward2, . ~ . +frost)
+fit5 <- update(forward2, . ~ . +area)
+
+result3 <- tibble(model = map(list(fit1, fit2, fit3, fit4, fit5), summary)) %>% 
+  mutate(result = map(model, tidy)) %>% 
+  select(-model) %>% 
+  unnest(result)
+
+result3 %>% 
+  filter(!term %in% c("(Intercept)", "murder", "hs_grad")) %>% 
+  mutate(rank_p_value = rank(p.value)) %>% 
+  right_join(., result3)
+```
+
+Enter: frost
+
+```{r}
+forward3 <- lm(life_exp ~ murder + hs_grad + frost, data = state)
+summary(forward3)
+```
+
+Enter variable with the smallest p value among the rest: 
+
+```{r}
+fit1 <- update(forward3, . ~ . +population)
+fit2 <- update(forward3, . ~ . +income)
+fit3 <- update(forward3, . ~ . +illiteracy)
+fit4 <- update(forward3, . ~ . +area)
+
+result4 <- tibble(model = map(list(fit1, fit2, fit3, fit4), summary)) %>% 
+  mutate(result = map(model, tidy)) %>% 
+  select(-model) %>% 
+  unnest(result)
+
+result4 %>% 
+  filter(!term %in% c("(Intercept)", "murder", "hs_grad", "frost")) %>% 
+  mutate(rank_p_value = rank(p.value)) %>% 
+  right_join(., result4)
+```
+
+Add population
+
+```{r}
+forward4 <- lm(life_exp ~ murder + hs_grad + frost + population, data = state)
+summary(forward4)
+```
+
+Enter variable with the smallest p value among the rest: 
+
+```{r}
+fit1 <- update(forward4, . ~ . +income)
+fit2 <- update(forward4, . ~ . +illiteracy)
+fit3 <- update(forward4, . ~ . +area)
+
+result5 <- tibble(model = map(list(fit1, fit2, fit3), summary)) %>% 
+  mutate(result = map(model, tidy)) %>% 
+  select(-model) %>% 
+  unnest(result)
+
+result5 %>% 
+  filter(!term %in% c("(Intercept)", "murder", "hs_grad", "frost", "population")) %>% 
+  mutate(rank_p_value = rank(p.value)) %>% 
+  right_join(., result5)
+```
+
+There is no additional predictor with p < 0.2, so we will not enter any other predictor. 
+Hence, the forward selection model:
+
+__life_exp ~ 71 - 0.3murder + 0.047hs_grad - 0.006frost + 0.00005population__
+
+__Method III: stepwise regression__
+
+```{r}
+mult.fit <- lm(life_exp ~ ., data = state)
+step(mult.fit, direction='backward') # select by AIC 
+```
+
+We choose the one with smallest AIC, hence the model chosen from stepwise regression procedure is:  
+
+__life_exp = 0.00005population - 0.3murder + 0.047hs_grad - 0.006frost__
 
 
+Answer question:
+
+a) All the three procedures end up with the same model: life_exp ~ population + murder + hs_grad + frost.
+
+b) During the forward and backward elimination procedures, the variable population is close to the not rejection region in terms of p value if we choose alpha to be 0.05. However, at this stage of exploratory analysis, we want to leverage the critical alpha value to be more inclusive and less stringent in variable selection. Therefore we keep this variable in the model.
+
+c) illteracy vs. HS graduation rate
+
+```{r}
+cor(state$illiteracy, state$hs_grad)
+```
+
+The linear correlation between illeteracy and HS graduation rate is 0.66 and they are negatively correlated. This makes sense because lower high graduation rate can be associated with higher rate of illiteracy. The subsets in the above do not contain both variable. 
+
+
+### Problem 3 Criterion based procedure
+
+We used criterion of Cp and adjusted R square to select for the best model
+
+```{r function of best model}
+library(leaps)
+best <- function(model, ...) 
+{
+  subsets <- regsubsets(formula(model), model.frame(model), ...)
+  subsets <- with(summary(subsets),
+                  cbind(p = as.numeric(rownames(which)), which, rss, rsq, adjr2, cp, bic))
+  
+  return(subsets)
+} 
+```
+
+```{r}
+best_result <- round(best(multi.fit), 4) %>% as.tibble()
+best_result
+
+par(mar=c(4,4,1,1))
+par(mfrow=c(1,2))
+
+
+plot(2:8, best_result$cp, xlab="No of parameters", ylab="Cp Statistic")
+abline(0,1) 
+
+plot(2:8, best_result$adjr2, xlab="No of parameters", ylab="Adj R2")
+```
+
+
+Comment: From the criterion of Cp and Adjusted R square, 5 parameters reach to the summit of adjusted R square with Cp smaller than number of parameters. So we decide to choose the model with 5 parameter (4 predictors):  life_exp ~ population + murder + hs_grad + frost. The model we achieved here is consistent with the automatic procedure result above.
+
+### Problem 4 choose final model and checking assumption
+
+
+
+
+    
 
