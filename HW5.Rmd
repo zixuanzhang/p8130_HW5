@@ -1,15 +1,16 @@
 ---
 title: "p8130 Homework 5"
-author: "Eleanor Zhang"
-date: "11/30/2018"
-output: html_document
-editor_options: 
-  chunk_output_type: console
+author: "Eleanor Zhang uni: zz2602"
+date: "12/1/2018"
+geometry: margin=2cm
+output: 
+     pdf_document:
+         latex_engine: xelatex
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-library("tidyverse")
+library(tidyverse)
 library("caret", "boot", "MPV")
 library(modelr)
 ```
@@ -19,9 +20,9 @@ library(modelr)
 
 R dataset ‘state.x77’ from library(faraway) contains information on 50 states from 1970s collected by US Census Bureau. The goal is to predict ‘life expectancy’ using a combination of remaining variables.
 
-Here our main outcome is life expectancy. The rest variables constitute the pool of variables that may be used for regression model.
+Here the main response is life expectancy. The rest variables constitute the pool of variables that may be selected for regression model.
 
-```{r}
+```{r message=FALSE, warning=FALSE}
 library(faraway)
 data(state)
 state <- as.tibble(state.x77) %>% 
@@ -33,15 +34,16 @@ state <- as.tibble(state.x77) %>%
 #### data description
 ```{r}
 str(state) # 50 rows, 8 variables
-names(state)
 ```
 
-Data description (from R document):  
+The dataset contains 50 observations and 8 variables
+
+Data description:  
 
 *  population: population estimate as of July 1, 1975
 *  income: per capita income (1974)
 *  illiteracy: illiteracy (1970, percent of population)
-*  life_exp: life expectancy in years (1969–71)
+*  life_exp (main response): life expectancy in years (1969–71)
 *  murder: murder and non-negligent manslaughter rate per 100,000 population (1976)
 *  hs_grad: percent high-school graduates (1970)
 *  frost: mean number of days with minimum temperature below freezing (1931–1960) in capital or large city
@@ -51,35 +53,42 @@ Data description (from R document):
 
 Number summary
 
-```{r}
+```{r summary}
 summary(state) 
 anyNA(state) # NO missing value
 ```
 
-Plot visualize distributin
+Display distributin of variables in order described above 
 
-```{r}
+```{r histogram}
 par(mfrow = c(2,4))
-map(state, hist)
+hist(state$population, main = "population")
+hist(state$income, main = "income")
+hist(state$illiteracy, main = "illitarcy")
+hist(state$life_exp, main = "life_exp")
+hist(state$murder, main = "murder")
+hist(state$hs_grad, main = "hs_grad")
+hist(state$frost, main = "frost")
+hist(state$area, main = "area")
 ```
 
-Observe:  
+__Observe__:  
 
-*  skewed: population size, illteracy, area (reported by median and IQR): maybe categorize them?
+*  skewed: population size, illteracy, area (reported by median and IQR)
 *  the other distribution looks evenly shaped (reported by mean and sd)
 
 relationship between covariates
 
-```{r}
+```{r correlation}
 state %>% select(life_exp, everything()) %>% pairs()
 cor(state) %>% knitr::kable()
 ```
 
-Observe:
+__Observe__:
 
 *  murder and illiteracy seems to have exponential relation
 *  Area may need to be categorized
-*  life expectancy are negatively associated with murder rate and illiteracy repectively linearly. There is some positive linear relation between life expectancy and high school graduates percentage and frost days.
+*  life expectancy are negatively and linearly associated with murder rate and illiteracy repectively. There is some positive linear relation between life expectancy and high school graduates percentage and frost days.
 *  Some potential colinearity: hs_grad and income, hs_grad and illiteracy, 
 
 #### Problem 2 Automatic procedure
@@ -89,7 +98,7 @@ multi.fit <- lm(life_exp ~ ., data = state)
 summary(multi.fit)
 ```
 
-Comment: murder and is the most significant predictor. hs_grad is significant at 0.05 level. The other predictors are not very significant when including all other variables in the model. The adjusted R-square is penalized such that it is significantly smaller than the unadjusted one. This implies we have included unnecessary predictors in the model.
+__Comment__: murder is the most significant predictor. hs_grad is significant at 0.05 level. The other predictors are not very significant when including all other variables in the model. The adjusted R-square is penalized such that it is significantly smaller than the unadjusted one. This implies we have included unnecessary predictors in the model.
 
 1) __Method I: Backward elimination (choose alpha_to_remove > 0.2)__
 
@@ -109,18 +118,18 @@ step2 <- update(step1, . ~ . -illiteracy)
 summary(step2)
 ```
 
-Then Then we __remove income__
+Then we __remove income__
 
 ```{r}
 step3 <- update(step2, . ~ . -income)
 summary(step3)
 ```
 
-At the beginning, we set alpha to remove is 0.2. There is no further reduction of variable at the stage. 
+As we set alpha_to_remove = 0.2 at the beginning. There is no further reduction of variable at the stage. 
 
 Result: backward selection model is 
 
-__life expectancy = 71 + 0.00005population - 0.3Murder + 0.047hs_grad - 0.006frost__
+life expectancy = 71 + 0.00005population - 0.3Murder + 0.047hs_grad - 0.006frost
 
 
 2) __Method II: Forward elimination (choose alpha to enter < 0.2)__
@@ -247,28 +256,28 @@ result5 %>%
   right_join(., result5)
 ```
 
-There is no additional predictor with p < 0.2, so we will not enter any other predictor. 
-Hence, the forward selection model:
+There is no additional predictor with p < 0.2, so we will not enter any other predictor. Hence, the forward selection model:
 
-__life_exp ~ 71 - 0.3murder + 0.047hs_grad - 0.006frost + 0.00005population__
+life_exp ~ 71 - 0.3murder + 0.047hs_grad - 0.006frost + 0.00005population
+
 
 __Method III: stepwise regression__
 
 ```{r}
 mult.fit <- lm(life_exp ~ ., data = state)
-step(mult.fit, direction='backward') # select by AIC 
+step(mult.fit, direction = 'both') # select by AIC 
 ```
 
-We choose the one with smallest AIC, hence the model chosen from stepwise regression procedure is:  
+We choose the one with smallest AIC, hence the model selected by stepwise regression procedure is:  
 
-__life_exp = 0.00005population - 0.3murder + 0.047hs_grad - 0.006frost__
+life_exp = 71 + 0.00005population - 0.3murder + 0.047hs_grad - 0.006frost
 
 
-Answer question:
+__Answer questions__:
 
 a) All the three procedures end up with the same model: life_exp ~ population + murder + hs_grad + frost.
 
-b) During the forward and backward elimination procedures, the variable population is close to the not rejection region in terms of p value if we choose alpha to be 0.05. However, at this stage of exploratory analysis, we want to leverage the critical alpha value to be more inclusive and less stringent in variable selection. Therefore we keep this variable in the model.
+b) During the forward and backward elimination procedures, the variable population is close to the not rejection region in terms of p value if we choose alpha to be 0.05. However, at this stage of exploratory analysis, we want to leverage the critical alpha value to be more inclusive and less stringent in variable selection. Therefore we keep this variable "population" in the model.
 
 c) illteracy vs. HS graduation rate
 
@@ -276,7 +285,7 @@ c) illteracy vs. HS graduation rate
 cor(state$illiteracy, state$hs_grad)
 ```
 
-The linear correlation between illeteracy and HS graduation rate is 0.66 and they are negatively correlated. This makes sense because lower high graduation rate can be associated with higher rate of illiteracy. The subsets in the above do not contain both variable. 
+The linear correlation between illeteracy and HS graduation rate is -0.66. This makes sense because lower high graduation rate can be associated with higher rate of illiteracy. The subsets in the above do not contain both variable. 
 
 
 ### Problem 3 Criterion based procedure
@@ -297,7 +306,7 @@ best <- function(model, ...)
 
 ```{r}
 best_result <- round(best(multi.fit), 4) %>% as.tibble()
-best_result
+best_result %>% knitr::kable()
 
 par(mar=c(4,4,1,1))
 par(mfrow=c(1,2))
@@ -310,13 +319,13 @@ plot(2:8, best_result$adjr2, xlab="No of parameters", ylab="Adj R2")
 ```
 
 
-Comment: From the criterion of Cp and Adjusted R square, 5 parameters reach to the summit of adjusted R square with Cp smaller than number of parameters. So we decide to choose the model with 5 parameter (4 predictors):  life_exp ~ population + murder + hs_grad + frost. The model we achieved here is consistent with the automatic procedure result above.
+__Comment__: From the criterion of Cp and Adjusted R square, 5 parameters reach to the summit of adjusted R square with Cp smaller than number of parameters. So we decide to choose the model with 5 parameter (4 predictors):  life_exp ~ population + murder + hs_grad + frost. The model we achieved here is consistent with the automatic procedure result above.
 
 ### Problem 4 choose final model and checking assumption
 
 Given the automatic procedure and criterion based procedure arrive at the same model, we will recommend this consistent result as our final model with 4 predictors: life_exp ~ population + murder + hs_grad + frost
 
-```{r}
+```{r final model}
 multi.fit4 <- lm(life_exp ~ population + murder + hs_grad + frost, data = state)
 summary(multi.fit4)
 ```
@@ -332,7 +341,7 @@ outliers_y <- stu_res[abs(stu_res)>2.5]
 outliers_y
 ```
 
-Comment: we did not find any outlier in life expectancy value
+__Comment__: we did not find any outlier in life expectancy (response)
 
 2. check leverage and infulential points 
 
@@ -347,11 +356,10 @@ Numerical measure of influential points:
 
 ```{r}
 influ.point <- influence.measures(multi.fit4)
-summary(influ.point)
+summary(influ.point) %>% knitr::kable()
 ```
 
-Comment: obseravtion 5 is an influential point in terms of predictor with high leverage value. observation 11 is identified with high DFFITS value so it affects the observation 11 fitted value. On the diagnostic plot, case 11 seems problematic on every plot. Therefore, we can try to remove this point and do analysis again.
-
+__Comment__: obseravtion 5 is an influential point in terms of predictor with high leverage value. observation 11 is identified with high DFFITS value so it affects the observation 11 fitted value. On the diagnostic plot, case 11 appears problematic on each plot. Therefore, we remove this point and do analysis again.
 
 b) check model assumption
 
@@ -364,7 +372,7 @@ par(mfrow = c(2,2))
 plot(multi.fit4.no11)
 ```
 
-Comment: After removing the influential point observation 11, we observed the residuals variances become more constant and normality is improved as well. So we will continue the following analysis based on the dataset without observation 11.
+__Comment__: After removing the influential point observation 11, we observed the residuals variances are stabilized and normality is improved as well. So we will continue the following analysis based on the dataset without observation 11.
 
 ### Problem 5
 
@@ -374,7 +382,6 @@ Final Model: life_exp ~ population + murder + hs_grad + frost
 
 ```{r create data train}
 data_train <- trainControl(method="cv", number=10)
-data_train
 ```
 
 Fit for 4 predictor model
@@ -386,12 +393,11 @@ model_caret <- train(life_exp ~ population + murder + hs_grad + frost,
                    method='lm',
                    na.action=na.pass)
 model_caret
-
-model_caret$resample # predictive measures
 sd(model_caret$resample$Rsquared) # training data R2
 ```
 
-Observe: the RMSE is 0.695 over the 10 folds of testing data, R square is 0.8. The R square shows that 80% the variation in life expectancy can be explained by these four predictors in our. So our model is describing the training data.
+__Comment__: the RMSE is 0.695 over the 10 folds of testing data. R square is 0.8. The R square shows that 80% the variation in life expectancy can be explained by these four predictors. 
+
 
 __b) A new bootstrap : residual sampling__
 
@@ -411,7 +417,6 @@ ii) randomly resample the residuals (with replacement), leaving X and fitted val
 set.seed(1)
 sample_res <- as.tibble(sample(data_pred_res$resid, nrow(data_pred_res), replace = TRUE))
 new_data_pred_res <- cbind(data_pred_res, sample_res) %>% rename("resid_sample" = value)
-new_data_pred_res
 ```
 
 iii) add new sampled residuals to fitted value
@@ -428,7 +433,7 @@ anova(new_model_fit)["Residuals","Mean Sq"] # get the MSE
 ```
 
 
-Put everything into function:
+Put everything into function and repeat for 10 and 1000 times:
 
 ```{r write a function}
 new_bootstrap <- function(model, n) {
@@ -458,7 +463,7 @@ new_bootstrap <- function(model, n) {
 
 ```
 
-repeat for 10 and 1000 times
+repeat for 10 and 1000 times:
 
 ```{r}
 set.seed(2)
@@ -475,5 +480,5 @@ boxplot(newboot_10$MSE_output, main = "MSE of 10 repeats", ylim = c(0, 1.2) )
 boxplot(newboot_1000$MSE_output, main = "MSE of 1000 repeats", ylim = c(0, 1.2))
 ```
 
-__Comment__: The new bootstrap method achieved a lower prediction MSE with less variance. This method relies on resampling residual errors and add to predicted value to create a new set of psedu "new observations", then refit the model. Overall we test the predictive ability of the model after generating a new set of "observations" in each cycle. Here we can examine the mean value and variability of MSE. I would recommend the new boostrap method because it does not leave out any data from the full dataset. In addition, it is capable of generating "new" data point for us to test for our model predictibility. So I would say the second method is more reliable. 
+__Comment__: The new bootstrap method achieved a lower prediction MSE with less variance compared to cross validation method. This method relies on resampling residual errors and add to predicted value to create a new set of pseudo "new observations", then refit the model. We tested the predictive ability of the model after generating a new set of "observations" in each cycle. Here we can examine the mean value and variability of MSE. I would recommend the new boostrap method because it does not leave out any data from the full dataset. In addition, it is capable of generating "new" data point for us to test for our model predictibility. So I would say the second method is more reliable. 
 
